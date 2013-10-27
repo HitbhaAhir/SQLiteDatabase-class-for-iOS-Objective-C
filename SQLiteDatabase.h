@@ -7,6 +7,8 @@
 
 #import <Foundation/Foundation.h>
 #import "sqlite3.h"
+#import "SQLiteResult.h"
+#import "SQLiteRow.h"
 
 @class SQLiteResult;
 
