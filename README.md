@@ -28,7 +28,7 @@ one for select (executeQuery:withParams) ,
 
 second for update/delete/insert (executeUpdate:withParams) ,
 
-both of them execute asynchronously , function takes **success** and **failure** bloks , if query succeeds , it will invoce *success* block and pass **SQLiteResult** object to it , otherwise *failure* block will be invoked and **errorMessage** will be passed to it ,
+both of them execute asynchronously , functions take **success** and **failure** bloks , if query succeeds , they will invoce *success* block and pass **SQLiteResult** object to it , otherwise *failure* block will be invoked and **errorMessage** will be passed to the block ,
 
 **executeQuery** has higher queue priority than executeUpdate .
 
