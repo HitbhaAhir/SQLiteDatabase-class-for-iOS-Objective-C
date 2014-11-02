@@ -80,7 +80,7 @@ NSDictionary *params = @{ @"id" : @(155) };
 UPDATE with PARAMETERS
 ```objective-c
 NSString *updateQuery = @"UPDATE TABLE_NAME set name = :name where id = :id";
-NSDictionary *updateParams = @{ @"id" : @(155)  };
+NSDictionary *updateParams = @{ @"id" : @(155) , @"name" : @"new name" };
 [[SQLiteDatabase sharedInstance] executeUpdate:updateQuery
                                     withParams:updateParams
                                        success:^(SQLiteResult *result) {
