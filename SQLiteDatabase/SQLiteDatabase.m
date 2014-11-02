@@ -69,7 +69,9 @@
             if(error != nil) {
                 LogDebug(@"Error Copying Database File %@ ",error.localizedDescription);
             }
+#ifdef EXCLUDE_DATABASE_FROM_BACKUP
             [self addSkipBackupAttributeToItemAtURL:[NSURL fileURLWithPath:sqliteDB]];
+#endif
         }
         
         if(sqlite3_open_v2([sqliteDB UTF8String], &_databaseHandle, SQLITE_OPEN_READWRITE, NULL) !=  SQLITE_OK) {

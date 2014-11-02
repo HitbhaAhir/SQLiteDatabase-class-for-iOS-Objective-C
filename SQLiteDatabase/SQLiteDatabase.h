@@ -11,6 +11,7 @@
 #import "SQLiteRow.h"
 
 #define DATABASE_FILE_NAME @"auto_catalog.sqlite"
+#define EXCLUDE_DATABASE_FROM_BACKUP
 
 @class SQLiteResult;
 

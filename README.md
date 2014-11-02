@@ -32,6 +32,8 @@ both of them execute asynchronously , functions take **success** and **failure**
 
 **executeQuery** has higher queue priority than executeUpdate .
 
+**database file is excluded from iCloud backup by default , if you want to disable that ( include file to backup ) remove or comment *#define EXCLUDE_DATABASE_FROM_BACKUP* in SQLiteDatabase.h**
+
 Examples :
 
 SELECT without parameters
