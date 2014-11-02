@@ -8,57 +8,149 @@
 #import "SQLiteDatabase.h"
 #import "SQLiteResult.h"
 #import "SQLiteRow.h"
+#include <sys/xattr.h>
 
+#ifdef DEBUG
+#define LogDebug(frmt, ...) NSLog(frmt, ##__VA_ARGS__);
+#else
+#define LogDebug(frmt, ...) {}
+#endif
+
+@interface SQLiteDatabase()
+
+@property (nonatomic) sqlite3 *databaseHandle;
+@property (nonatomic) NSOperationQueue *queryQueue;
+
+@end
 
 @implementation SQLiteDatabase
 
-static sqlite3 * _db;
 
-+(sqlite3 *)getDBConnection {
-    @synchronized([SQLiteDatabase class]) {
-        
-        if(_db == nil) {
-            NSFileManager *fileManager = [NSFileManager defaultManager];
-            NSError *error;
-            NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-            NSString *documentsDirectory = [paths objectAtIndex:0];
-            NSString *sqliteDB = [documentsDirectory stringByAppendingPathComponent:DATABASE_FILE_NAME];
-            
-            if ([fileManager fileExistsAtPath:sqliteDB] == NO) {
-                NSArray *parts = [DATABASE_FILE_NAME componentsSeparatedByString:@"."];
-                if(parts.count != 2) {
-                    NSLog(@"Database file name must be with format FILENAME.TYPE , for example mydatabase.sqlite , your is %@",DATABASE_FILE_NAME);
-                    return nil;
-                }
-                NSString *resourcePath = [[NSBundle mainBundle] pathForResource:[parts objectAtIndex:0] ofType:[parts objectAtIndex:1]];
-                if(resourcePath == nil) {
-                    NSLog(@"Database file %@ Does not exist ",DATABASE_FILE_NAME);
-                    return nil;
-                }
-                [fileManager copyItemAtPath:resourcePath toPath:sqliteDB error:&error];
-                if(error != nil) {
-                    NSLog(@"Error Copying Database File %@ ",error.localizedDescription);
-                }
-            }
-            
-            if(sqlite3_open_v2([sqliteDB UTF8String], &_db, SQLITE_OPEN_READWRITE, NULL) !=  SQLITE_OK) {
-                NSLog(@"Failed to open the database %@ ",sqliteDB);
-            }
-        }
-    }
++ (instancetype)sharedInstance {
+    static dispatch_once_t onceToken;
+    static SQLiteDatabase *instance;
+    dispatch_once(&onceToken, ^{
+        instance = [[SQLiteDatabase alloc] init];
+    });
+    return instance;
+}
+
+- (id)init {
+    self = [super init];
     
-    return _db;
+    self.queryQueue = [[NSOperationQueue alloc] init];
+    self.queryQueue.maxConcurrentOperationCount = 1;
+    
+    return self;
+}
+
+- (sqlite3 *)databaseHandle {
+    if(_databaseHandle == nil) {
+        
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        NSError *error;
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *documentsDirectory = [paths objectAtIndex:0];
+        NSString *sqliteDB = [documentsDirectory stringByAppendingPathComponent:DATABASE_FILE_NAME];
+        
+        if ([fileManager fileExistsAtPath:sqliteDB] == NO) {
+            NSArray *parts = [DATABASE_FILE_NAME componentsSeparatedByString:@"."];
+            if(parts.count != 2) {
+                LogDebug(@"Database file name must be with format FILENAME.TYPE , for example mydatabase.sqlite , your is %@",DATABASE_FILE_NAME);
+                return nil;
+            }
+            NSString *resourcePath = [[NSBundle mainBundle] pathForResource:[parts objectAtIndex:0]
+                                                                     ofType:[parts objectAtIndex:1]];
+            if(resourcePath == nil) {
+                LogDebug(@"Database file %@ Does not exist ",DATABASE_FILE_NAME);
+                return nil;
+            }
+            [fileManager copyItemAtPath:resourcePath toPath:sqliteDB error:&error];
+            if(error != nil) {
+                LogDebug(@"Error Copying Database File %@ ",error.localizedDescription);
+            }
+            [self addSkipBackupAttributeToItemAtURL:[NSURL fileURLWithPath:sqliteDB]];
+        }
+        
+        if(sqlite3_open_v2([sqliteDB UTF8String], &_databaseHandle, SQLITE_OPEN_READWRITE, NULL) !=  SQLITE_OK) {
+            LogDebug(@"Failed to open the database %@ ",sqliteDB);
+        }
+        
+    }
+    return _databaseHandle;
+}
+
+- (BOOL)addSkipBackupAttributeToItemAtURL:(NSURL *)URL {
+    NSError *error = nil;
+    [URL setResourceValue:[NSNumber numberWithBool:YES] forKey:NSURLIsExcludedFromBackupKey error:&error];
+    return error == nil;
+}
+
+#pragma mark - Query Methods
+
+- (void)executeQuery:(NSString *)query
+          withParams:(NSDictionary *)params
+             success:(void(^)(SQLiteResult *result))success
+             failure:(void(^)(NSString *errorMessage))failure {
+    NSBlockOperation *operation = [NSBlockOperation blockOperationWithBlock:^{
+        SQLiteResult *result = [self qin:query withParams:params];
+        [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+            if(!result) {
+                if(failure) {
+                    failure(@"Unknown Error");
+                }
+            } else if(!result.success) {
+                if(failure) {
+                    failure(result.errorMessage);
+                }
+            } else {
+                if(success) {
+                    success(result);
+                }
+            }
+        }];
+    }];
+    
+    operation.queuePriority = NSOperationQueuePriorityHigh;
+    [self.queryQueue addOperation:operation];
+}
+
+- (void)executeUpdate:(NSString *)query
+           withParams:(NSDictionary *)params
+              success:(void(^)(SQLiteResult *result))success
+              failure:(void(^)(NSString *errorMessage))failure {
+    
+    NSBlockOperation *operation = [NSBlockOperation blockOperationWithBlock:^{
+        SQLiteResult *result = [self qout:query withParams:params];
+        [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+            if(!result) {
+                if(failure) {
+                    failure(@"Unknown Error");
+                }
+            } else if(!result.success) {
+                if(failure) {
+                    failure(result.errorMessage);
+                }
+            } else {
+                if(success) {
+                    success(result);
+                }
+            }
+        }];
+    }];
+    operation.queuePriority = NSOperationQueuePriorityNormal;
+    [self.queryQueue addOperation:operation];
 }
 
 
-+(SQLiteResult *)qin:(NSString *)query
+-(SQLiteResult *)qin:(NSString *)query
           withParams:(NSDictionary *)params {
     
     SQLiteResult *result = [SQLiteResult resultWithSuccess];
     
     sqlite3_stmt *statement;
     
-    if(sqlite3_prepare_v2([self getDBConnection], [query UTF8String], -1, &statement, nil) == SQLITE_OK) {
+    if(sqlite3_prepare_v2(self.databaseHandle, [query UTF8String], -1, &statement, nil) == SQLITE_OK) {
         
         int bindParamsCount = sqlite3_bind_parameter_count(statement);
         if(bindParamsCount > 0 && (params == nil || params.count != bindParamsCount) ) {
@@ -96,12 +188,12 @@ static sqlite3 * _db;
 
 
 
-+(SQLiteResult *)qout:(NSString *)query
+-(SQLiteResult *)qout:(NSString *)query
            withParams:(NSDictionary *)params {
-
+    
     sqlite3_stmt *statement;
     
-    if(sqlite3_prepare_v2([self getDBConnection], [query UTF8String], -1, &statement, nil) == SQLITE_OK) {
+    if(sqlite3_prepare_v2(self.databaseHandle, [query UTF8String], -1, &statement, nil) == SQLITE_OK) {
         
         int bindParamsCount = sqlite3_bind_parameter_count(statement);
         if(bindParamsCount > 0 && (params == nil || params.count != bindParamsCount) ) {
@@ -114,7 +206,7 @@ static sqlite3 * _db;
         }
         
         if(sqlite3_step(statement) != SQLITE_DONE) {
-            const char* error = sqlite3_errmsg([self getDBConnection]);
+            const char* error = sqlite3_errmsg(self.databaseHandle);
             return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Error => %@",[[NSString alloc] initWithUTF8String:error]]];
         }
         
@@ -122,10 +214,14 @@ static sqlite3 * _db;
     } else {
         return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Incorrect query %@",query]];
     }
+    
+    
     return [SQLiteResult resultWithSuccess];
 }
 
-+(SQLiteResult *)bindParams:(NSDictionary *)params toStatement:(sqlite3_stmt *)statement {
+#pragma mark - Inner Private Methods
+
+- (SQLiteResult *)bindParams:(NSDictionary *)params toStatement:(sqlite3_stmt *)statement {
     
     if(params != nil) {
         for(NSString *key in params) {
@@ -154,7 +250,7 @@ static sqlite3 * _db;
     return [SQLiteResult resultWithSuccess];
 }
 
-+(SQLiteRow *)getSqliteRowWithStatement:(sqlite3_stmt *)statement andColumnCount:(NSUInteger)columnCount {
+-(SQLiteRow *)getSqliteRowWithStatement:(sqlite3_stmt *)statement andColumnCount:(NSUInteger)columnCount {
     NSMutableDictionary *row = [[NSMutableDictionary alloc] initWithCapacity:columnCount];
     
     for(int i = 0;i < columnCount;i++) {
@@ -164,8 +260,8 @@ static sqlite3 * _db;
         } else {
             name = [NSString stringWithFormat:@"%d", i];
         }
-
-        id value = [NSNull null];
+        
+        id value;
         
         int type = sqlite3_column_type(statement, i);
         
@@ -193,7 +289,7 @@ static sqlite3 * _db;
     return [SQLiteRow rowWithRawData:row];
 }
 
-+(NSString *)stringWithCString:(char *)str {
+- (NSString *)stringWithCString:(char *)str {
     if(str) {
         return [[NSString alloc] initWithUTF8String:str];
     }
