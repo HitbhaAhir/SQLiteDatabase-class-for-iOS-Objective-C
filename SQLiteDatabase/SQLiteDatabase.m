@@ -155,8 +155,8 @@
     if(sqlite3_prepare_v2(self.databaseHandle, [query UTF8String], -1, &statement, nil) == SQLITE_OK) {
         
         int bindParamsCount = sqlite3_bind_parameter_count(statement);
-        if(bindParamsCount > 0 && (params == nil || params.count != bindParamsCount) ) {
-            return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Query needs %d parameters to bind",bindParamsCount]];
+        if(params.count < bindParamsCount) {
+            return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Query %@ needs %d parameters to bind, got %@ ",query,bindParamsCount,params]];
         }
         
         SQLiteResult *bindResult = [self bindParams:params toStatement:statement];
@@ -180,11 +180,9 @@
         }
         
         sqlite3_finalize(statement);
-        
     } else {
         return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Incorrect query %@",query]];
     }
-    
     return result;
 }
 
@@ -198,8 +196,8 @@
     if(sqlite3_prepare_v2(self.databaseHandle, [query UTF8String], -1, &statement, nil) == SQLITE_OK) {
         
         int bindParamsCount = sqlite3_bind_parameter_count(statement);
-        if(bindParamsCount > 0 && (params == nil || params.count != bindParamsCount) ) {
-            return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Query needs %d parameters to bind",bindParamsCount]];
+        if(params.count < bindParamsCount) {
+            return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Query %@ needs %d parameters to bind, got %@ ",query,bindParamsCount,params]];
         }
         
         SQLiteResult *bindResult = [self bindParams:params toStatement:statement];
@@ -226,15 +224,29 @@
 - (SQLiteResult *)bindParams:(NSDictionary *)params toStatement:(sqlite3_stmt *)statement {
     
     if(params != nil) {
-        for(NSString *key in params) {
-            NSString *paramName = [key hasPrefix:@":"] ? key : [NSString stringWithFormat:@":%@",key];
+        int paramsCount = sqlite3_bind_parameter_count(statement);
+        for(int columnIndex = 1;columnIndex <= paramsCount;columnIndex++) {
             
-            int columnIndex = sqlite3_bind_parameter_index(statement,[paramName UTF8String]);
-            if(columnIndex == 0) {
-                return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Can`t bind parameter %@",key]];
+            const char *charKey = sqlite3_bind_parameter_name(statement, columnIndex);
+            if(!charKey) {
+                return [SQLiteResult resultWithErrorMessage:@"Incorrect query"];
             }
             
+            NSString *key = [[NSString alloc] initWithUTF8String:charKey];
+            
             id parameter = [params objectForKey:key];
+            if(!parameter) {
+                if([key hasPrefix:@":"]) {
+                    parameter = [params objectForKey:[key substringFromIndex:1]];
+                } else {
+                    parameter = [params objectForKey:[NSString stringWithFormat:@":%@",key]];
+                }
+            }
+            
+            if(!parameter) {
+                return [SQLiteResult resultWithErrorMessage:[NSString stringWithFormat:@"Can`t find parameter with name %@",key]];
+            }
+            
             if([parameter isKindOfClass:[NSString class]]) {
                 sqlite3_bind_text(statement, columnIndex,[((NSString *)parameter) UTF8String], -1, SQLITE_TRANSIENT);
             } else if([parameter isKindOfClass:[NSNumber class]]) {
@@ -300,5 +312,3 @@
 
 
 @end
-
-
