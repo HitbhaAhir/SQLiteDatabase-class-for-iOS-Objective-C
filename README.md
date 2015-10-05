@@ -21,7 +21,8 @@ if you already have one , create database instance
 ```
 you can also make it sharedInstance and access from The class method later
 ```objective-c
-[[SQLiteDatabase databaseWithFileName:@"FileName"] setAsSharedInstance]
+[[SQLiteDatabase databaseWithFileName:@"FileName"] setAsSharedInstance];
+[SQLiteDatabase sharedInstance]
 ```
 
 add 
