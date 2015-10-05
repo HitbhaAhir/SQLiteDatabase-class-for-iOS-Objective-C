@@ -20,27 +20,37 @@
 
 @property (nonatomic) sqlite3 *databaseHandle;
 @property (nonatomic) NSOperationQueue *queryQueue;
+@property (nonatomic,readwrite) NSString *databaseFileName;
 
 @end
 
 @implementation SQLiteDatabase
 
-
+static SQLiteDatabase *_instance;
 + (instancetype)sharedInstance {
-    static dispatch_once_t onceToken;
-    static SQLiteDatabase *instance;
-    dispatch_once(&onceToken, ^{
-        instance = [[SQLiteDatabase alloc] init];
-    });
-    return instance;
+    return _instance;
 }
 
-- (id)init {
++ (void)setSharedInstance:(SQLiteDatabase *)instance {
+    _instance = instance;
+}
+
++ (instancetype)databaseWithFileName:(NSString *)name {
+    return [[self alloc] initWithFileName:name];
+}
+
+- (instancetype)initWithFileName:(NSString *)name {
     self = [super init];
     
+    self.databaseFileName = name;
     self.queryQueue = [[NSOperationQueue alloc] init];
     self.queryQueue.maxConcurrentOperationCount = 1;
     
+    return self;
+}
+
+- (instancetype)setAsSharedInstance {
+    [[self class] setSharedInstance:self];
     return self;
 }
 
@@ -51,27 +61,25 @@
         NSError *error;
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         NSString *documentsDirectory = [paths objectAtIndex:0];
-        NSString *sqliteDB = [documentsDirectory stringByAppendingPathComponent:DATABASE_FILE_NAME];
+        NSString *fileName = [self.databaseFileName hasSuffix:@".sqlite"] ? self.databaseFileName : [NSString stringWithFormat:@"%@.sqlite",self.databaseFileName];
+        NSString *sqliteDB = [documentsDirectory stringByAppendingPathComponent:fileName];
         
         if ([fileManager fileExistsAtPath:sqliteDB] == NO) {
-            NSArray *parts = [DATABASE_FILE_NAME componentsSeparatedByString:@"."];
-            if(parts.count != 2) {
-                LogDebug(@"Database file name must be with format FILENAME.TYPE , for example mydatabase.sqlite , your is %@",DATABASE_FILE_NAME);
-                return nil;
-            }
+            NSArray *parts = [fileName componentsSeparatedByString:@"."];
             NSString *resourcePath = [[NSBundle mainBundle] pathForResource:[parts objectAtIndex:0]
                                                                      ofType:[parts objectAtIndex:1]];
             if(resourcePath == nil) {
-                LogDebug(@"Database file %@ Does not exist ",DATABASE_FILE_NAME);
+                LogDebug(@"Database file %@ Does not exist ",fileName);
                 return nil;
             }
             [fileManager copyItemAtPath:resourcePath toPath:sqliteDB error:&error];
             if(error != nil) {
                 LogDebug(@"Error Copying Database File %@ ",error.localizedDescription);
             }
-#ifdef EXCLUDE_DATABASE_FROM_BACKUP
-            [self addSkipBackupAttributeToItemAtURL:[NSURL fileURLWithPath:sqliteDB]];
-#endif
+            
+            if(!self.includeInICloudBackup) {
+                [self addSkipBackupAttributeToItemAtURL:[NSURL fileURLWithPath:sqliteDB]];
+            }
         }
         
         if(sqlite3_open_v2([sqliteDB UTF8String], &_databaseHandle, SQLITE_OPEN_READWRITE, NULL) !=  SQLITE_OK) {
@@ -252,7 +260,7 @@
             } else if([parameter isKindOfClass:[NSNumber class]]) {
                 sqlite3_bind_double(statement, columnIndex, ([(NSNumber *)parameter doubleValue]));
             } else if([parameter isKindOfClass:[NSData class]]) {
-                sqlite3_bind_blob(statement, columnIndex, [parameter bytes], [parameter length], SQLITE_TRANSIENT);
+                sqlite3_bind_blob(statement, columnIndex, [parameter bytes], (int)[parameter length], SQLITE_TRANSIENT);
             } else if([parameter isKindOfClass:[NSDate class]]) {
                 sqlite3_bind_double(statement, columnIndex, [((NSDate *)parameter) timeIntervalSince1970]);
             } else {

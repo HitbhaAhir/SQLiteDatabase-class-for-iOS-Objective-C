@@ -10,14 +10,23 @@
 #import "SQLiteResult.h"
 #import "SQLiteRow.h"
 
-#define DATABASE_FILE_NAME @"auto_catalog.sqlite"
-#define EXCLUDE_DATABASE_FROM_BACKUP
-
 @class SQLiteResult;
 
 @interface SQLiteDatabase : NSObject
 
 + (instancetype)sharedInstance;
++ (instancetype)databaseWithFileName:(NSString *)name;
+- (instancetype)initWithFileName:(NSString *)name;
+
+@property (nonatomic,readonly) NSString *databaseFileName;
+
+//set this before accessing the actual database file itself
+@property (nonatomic) BOOL includeInICloudBackup;
+
+/**
+ * Sets current instance as sharedInstance
+ */
+- (instancetype)setAsSharedInstance;
 
 /**
  *  is used for SELECT something from database

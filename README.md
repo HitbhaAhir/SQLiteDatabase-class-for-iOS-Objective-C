@@ -8,14 +8,22 @@ Features :
 
 Usage :
 
+**Please have a look at the sample project.**
+
+
 you must add "sqlite3 framework" to your project, 
 
 you should already have a sqlite database file , you can create your database with several tools : [https://addons.mozilla.org/en-US/firefox/addon/sqlite-manager/](https://addons.mozilla.org/en-US/firefox/addon/sqlite-manager/), [http://sourceforge.net/projects/sqlitebrowser/](http://sourceforge.net/projects/sqlitebrowser/) , [http://www.sqliteexpert.com/](http://www.sqliteexpert.com/) , [http://www.razorsql.com/features/sqlite_table_editor.html](http://www.razorsql.com/features/sqlite_table_editor.html) .
 
-if you already have one , open SQLiteDatabase.h and change @"database_file.sqlite" to your file name
+if you already have one , create database instance
 ```objective-c
-#define DATABASE_FILE_NAME @"database_file.sqlite"
+[SQLiteDatabase databaseWithFileName:@"FileName"]
 ```
+you can also make it sharedInstance and access from The class method later
+```objective-c
+[[SQLiteDatabase databaseWithFileName:@"FileName"] setAsSharedInstance]
+```
+
 add 
 ```objective-c
 #import "SQLiteDatabase.h"
@@ -32,7 +40,7 @@ both of them execute asynchronously , functions take **success** and **failure**
 
 **executeQuery** has higher queue priority than executeUpdate .
 
-**database file is excluded from iCloud backup by default , if you want to disable that ( include file to backup ) remove or comment *#define EXCLUDE_DATABASE_FROM_BACKUP* in SQLiteDatabase.h**
+**database file is excluded from iCloud backup by default , if you want to disable that ( include file to backup ) set includeInICloudBackup to YES**
 
 Examples :
 
